@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+!.env.external.example
+archive/
+.venv/
+__pycache__/

@@ -1,0 +1,9 @@
+models:
+  - name: qwen3-0.6b-4bit
+    provider: huggingface
+    repo: mlx-community/Qwen3-0.6B-4bit
+    category: llm
+    priority: p1
+    revision: main  # Resolved to an immutable commit SHA at download time
+    upstream_repo: Qwen/Qwen3-0.6B
+    enabled: true
