@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 from providers import get_provider
+from validate_manifest import validate_manifest
 
 BASE = Path(__file__).resolve().parent
 
@@ -87,12 +88,23 @@ def download(model, root):
     provider.download(repo, revision=sha, destination=dest)
     meta_dir.mkdir(exist_ok=True)
     card = info.card_data
-    card_data = dict(card) if card is not None else {}
+    if card is None:
+        card_data = {}
+    elif isinstance(card, dict):
+        card_data = dict(card)
+    else:
+        # huggingface_hub's ModelCardData supports attribute access, but its
+        # mapping-style iteration is not a normal dict conversion.
+        card_data = {
+            key: value for key, value in vars(card).items()
+            if not key.startswith("_")
+        }
     metadata = {
         "provider": provider.name,
         "repository": repo, "upstream_repository": model.get("upstream_repo"),
         "revision": sha, "category": model["category"],
         "priority": model.get("priority"),
+        "personal_notes": model.get("personal_notes"),
         "downloaded_at_utc": datetime.now(timezone.utc).isoformat(),
         "license": card_data.get("license"),
         "license_name": card_data.get("license_name"),
@@ -111,6 +123,19 @@ def download(model, root):
     write_json(meta_dir / "checksums.json", checksums)
     write_json(completion, {"revision": sha, "file_count": len(checksums)})
     print(f"Complete: {len(checksums)} files. License: {metadata['license'] or 'unspecified'} (review required)")
+
+
+def dry_run(model, root):
+    """Resolve the selected ref and report the exact archive action without writing."""
+    provider = get_provider(model.get("provider", "huggingface"))
+    repo = model["repo"]
+    info = provider.get_metadata(repo, revision=model.get("revision", "main"))
+    sha = info.sha
+    dest = root / "models" / model["category"] / model["name"] / "revisions" / sha
+    if (dest / "_archive" / "complete.json").exists():
+        print(f"Already archived: {repo} @ {sha} at {dest}")
+    else:
+        print(f"Would download: {repo} @ {sha} to {dest}")
 
 
 def verify(root):
@@ -147,8 +172,15 @@ def main():
     parser.add_argument("--env-file", type=Path, default=BASE / ".env")
     parser.add_argument("--name", help="Model name from models.yaml")
     parser.add_argument("--priority", choices=["p1", "p2", "p3"])
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Resolve revisions and report archive actions without writing or downloading")
     args = parser.parse_args()
     load_dotenv(args.env_file, override=True)
+    if args.command == "download" and args.dry_run:
+        try:
+            validate_manifest(args.config)
+        except ValueError as exc:
+            parser.error(str(exc))
     models = registry(args.config)
     if args.command == "list":
         for m in models:
@@ -158,7 +190,7 @@ def main():
     root = root_dir()
     if args.command == "download":
         for model in choose(models, args.name, args.priority):
-            download(model, root)
+            (dry_run if args.dry_run else download)(model, root)
     elif args.command == "verify":
         verify(root)
     else:

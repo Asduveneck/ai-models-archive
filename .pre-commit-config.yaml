@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: python-tests
+        name: Python test suite
+        entry: python3 -m pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: validate-manifests
+        name: Validate YAML manifests
+        entry: python3 -c "from pathlib import Path; from validate_manifest import validate_manifest; [validate_manifest(p) for p in (Path('models.yaml'), Path('models.example.yaml'))]"
+        language: system
+        pass_filenames: false
+        always_run: true

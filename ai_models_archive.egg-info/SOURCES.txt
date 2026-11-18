@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+requirements.txt
+ai_models_archive.egg-info/PKG-INFO
+ai_models_archive.egg-info/SOURCES.txt
+ai_models_archive.egg-info/dependency_links.txt
+ai_models_archive.egg-info/requires.txt
+ai_models_archive.egg-info/top_level.txt
+providers/__init__.py
+providers/base.py
+providers/huggingface.py
+tests/test_model_archive.py
+tests/test_validate_manifest.py

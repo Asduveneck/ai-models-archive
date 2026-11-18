@@ -89,6 +89,97 @@ def test_download_resolves_revision_and_preserves_archive_metadata(tmp_path, mon
     model_archive.verify(tmp_path)
 
 
+@pytest.mark.parametrize("archived", [False, True])
+def test_dry_run_resolves_revision_without_writes_or_downloads(tmp_path, monkeypatch, capsys, archived):
+    sha = "b" * 40
+    info = SimpleNamespace(sha=sha)
+    calls = {"metadata": 0, "download": 0}
+
+    class FakeProvider:
+        name = "huggingface"
+
+        def get_metadata(self, repository, revision):
+            calls["metadata"] += 1
+            return info
+
+        def download(self, repository, revision, destination):
+            calls["download"] += 1
+            raise AssertionError("dry-run must not download")
+
+    monkeypatch.setattr(model_archive, "get_provider", lambda name: FakeProvider())
+    root = tmp_path / "archive"
+    destination = root / "models/llm/sample/revisions" / sha
+    if archived:
+        completion = destination / "_archive/complete.json"
+        completion.parent.mkdir(parents=True)
+        completion.write_text("{}", encoding="utf-8")
+    before = {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+    model_archive.dry_run({
+        "name": "sample", "repo": "org/model", "provider": "huggingface",
+        "category": "llm", "revision": "main",
+    }, root)
+
+    output = capsys.readouterr().out
+    assert calls == {"metadata": 1, "download": 0}
+    assert str(destination) in output
+    assert ("Already archived:" if archived else "Would download:") in output
+    assert not root.exists() if not archived else root.exists()
+    after = {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert after == before
+
+
+def test_dry_run_cli_uses_selection_and_does_not_require_writable_archive(tmp_path, monkeypatch, capsys):
+    config = write_registry(tmp_path, """categories: [llm]
+models:
+  - name: selected
+    repo: org/model
+    category: llm
+  - name: other
+    repo: org/other
+    category: llm
+""")
+    calls = []
+
+    class FakeProvider:
+        name = "huggingface"
+
+        def get_metadata(self, repository, revision):
+            calls.append((repository, revision))
+            return SimpleNamespace(sha="c" * 40)
+
+        def download(self, *args, **kwargs):
+            raise AssertionError("dry-run must not download")
+
+    monkeypatch.setattr(model_archive, "get_provider", lambda name: FakeProvider())
+    monkeypatch.setenv("MODEL_ARCHIVE_ROOT", str(tmp_path / "missing"))
+    monkeypatch.setattr("sys.argv", ["model_archive.py", "download", "--config", str(config),
+                                     "--name", "selected", "--dry-run"])
+    model_archive.main()
+    assert calls == [("org/model", "main")]
+    assert "selected" in capsys.readouterr().out
+    assert not (tmp_path / "missing").exists()
+
+
+@pytest.mark.parametrize("manifest_text, message", [
+    ("categories: [llm]\nmodels: {}", "'models' must be a list"),
+    ("categories: [llm]\nmodels:\n  - name: incomplete\n    repo: org/model\n", "category is required"),
+    ("categories: [llm]\nmodels:\n  - name: bad\n    repo: org/model\n    category: llm\n    provider: missing\n", "Unsupported provider: missing"),
+])
+def test_dry_run_reports_invalid_manifest_without_provider_lookup(
+    tmp_path, monkeypatch, capsys, manifest_text, message,
+):
+    config = write_registry(tmp_path, manifest_text)
+    monkeypatch.setenv("MODEL_ARCHIVE_ROOT", str(tmp_path / "archive"))
+    monkeypatch.setattr("sys.argv", ["model_archive.py", "download", "--config", str(config),
+                                     "--dry-run"])
+    with pytest.raises(SystemExit) as exc:
+        model_archive.main()
+    assert exc.value.code == 2
+    assert message in capsys.readouterr().err
+    assert not (tmp_path / "archive").exists()
+
+
 def test_huggingface_provider_forwards_commit_and_destination(monkeypatch, tmp_path):
     calls = {}
 

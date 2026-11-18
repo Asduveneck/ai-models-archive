@@ -1,6 +1,6 @@
 # AI Models Archive
 
-A small, reusable Python CLI for downloading Hugging Face models to a configurable directory, preserving model cards and license files, recording repository metadata, and verifying SHA-256 checksums. Start with **one small 4-bit MLX model** before switching to an external HDD.
+A small, reusable Python CLI for downloading Hugging Face models to a configurable directory, preserving model cards and license files, recording repository metadata, and verifying SHA-256 checksums.
 
 ## Quick start
 
@@ -10,14 +10,44 @@ Requires Python 3.10+.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e '.[dev]'
+pre-commit install
 cp .env.example .env
-python model_archive.py list
+cp models.example.yaml models.yaml
 python model_archive.py download
-python model_archive.py verify
-python model_archive.py licenses
 ```
 
-The initial `models.yaml` contains only `mlx-community/Qwen3-0.6B-4bit`, a small quantized language model for Apple Silicon. **This is an MLX model, not Granite Docling.** Granite Docling can be added later; its official 500M model is not necessarily a drop-in 4-bit MLX checkpoint.
+The included `models.yaml` is a starting registry. Edit it to add the models you want to archive, or copy `models.example.yaml` to use the example registry separately. A download saves every file in each selected repository snapshot, including model weights, so review the registry before running it.
+
+Use `--name` or `--priority` to select models from the registry. For example:
+
+```bash
+python model_archive.py download --name qwen3-0.6b-4bit
+python model_archive.py download --name qwen3-0.6b-4bit --dry-run
+```
+
+`--dry-run` performs the same model selection and provider revision lookup as a download, then reports whether that exact revision is archived or would be downloaded and its destination. It does not create directories, write files, or download model data.
+
+Before adding a Hugging Face repository, verify its exact ID and card with:
+
+```bash
+python verify_hf_repo.py OWNER/REPO --expected-name 'MODEL NAME' --expected-size 0.6B
+```
+
+This checks Hub visibility and fetches only `README.md`; no model weights are downloaded. Compare the displayed card title and parameter-size claims with the requested model. Missing/private/gated repositories, authentication failures, and unclear or mismatched model details require stopping for access or clarification; do not guess a replacement. Record the source URL, verification date, requested and observed identity/size, and decision in [MODEL_REGISTRY_REVIEWS.md](MODEL_REGISTRY_REVIEWS.md). This keeps provenance reviewable without adding fields to the manifest schema. After adding the entry, run both manifest validators and `python model_archive.py download --name ENTRY_NAME --dry-run` with `MODEL_ARCHIVE_ROOT` set. Never run a real download as part of verification.
+
+## Other commands
+
+```bash
+python model_archive.py list
+python model_archive.py verify
+python model_archive.py licenses
+python validate_manifest.py models.yaml
+python validate_manifest.py models.example.yaml
+python -m pytest
+```
+
+`list` shows configured models, `verify` checks archived files against their recorded checksums, and `licenses` reports metadata for models already in the archive. The validator accepts one manifest path per invocation and checks required fields, types, provider support, and duplicate names. `licenses` does not download files or review license terms for you. Pre-commit runs the Python test suite and validates both checked-in manifests on every commit.
 
 ## Switch destinations without editing Python
 
@@ -55,21 +85,32 @@ Never commit real `.env` files or access tokens. For gated models, authenticate 
 
 ## YAML registry
 
-`models.yaml` controls the models, priorities, and destinations:
+`models.yaml` controls the models and priorities:
 
 ```yaml
+categories:
+  - llm
+  - Documents
+  - Embeddings
+  - Reranking
+
 models:
   - name: qwen3-0.6b-4bit
     provider: huggingface
     repo: mlx-community/Qwen3-0.6B-4bit
     category: llm
     priority: p1
+    personal_notes: "Compact model for local experimentation; note your use case and any limitations."
     revision: main
     upstream_repo: Qwen/Qwen3-0.6B
     enabled: true
 ```
 
+Declare every accepted category in the top-level `categories` list. Each model's `category` must exactly match one of those values; the manifest validator checks this before downloads, dry runs, or other commands that load the manifest. Add a category to the list before assigning it to a model.
+
 `provider` selects the model repository backend. It defaults to `huggingface` for older registry files, and currently Hugging Face is the only supported value. The archive manager uses a small provider interface for repository metadata, immutable revision resolution, and snapshot downloads; archive layout, manifests, checksums, and licensing review remain in the manager. A future provider can implement that interface and be added to the explicit `get_provider` mapping without a plugin system. Storage destinations continue to come from `MODEL_ARCHIVE_ROOT` in the environment or `.env` file, not from model entries. Archive provenance records the provider, repository, resolved commit, timestamp, available model-card/license metadata, and configured upstream reference. This is a historical metadata snapshot, not a license review: every model remains `review_required`, including quantized derivatives.
+
+`personal_notes` is an optional field for your own intended use, recommendations, strengths, or limitations. When present, it is copied into the archive's readable `_archive/metadata.json` file. It can be a string, mapping, list, or another JSON-compatible YAML value. The example uses a string. Notes are captured when a revision is first archived; downloading an already completed revision does not update its metadata.
 
 `revision: main` is resolved to a full immutable commit hash before downloading. You can pin a commit hash in YAML for strict repeatability. Add more entries and use `--name` or `--priority` to select models:
 

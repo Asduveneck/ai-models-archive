@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: ai-models-archive
+Version: 0.1.0
+Summary: A small reproducible model archive CLI
+Requires-Python: >=3.10
+Requires-Dist: huggingface_hub<2,>=0.34
+Requires-Dist: PyYAML<7,>=6
+Requires-Dist: python-dotenv<2,>=1
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=8; extra == "dev"
+Requires-Dist: pre-commit<5,>=3; extra == "dev"

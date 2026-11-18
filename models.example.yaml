@@ -1,0 +1,17 @@
+# Example registry. Copy this file to models.yaml and edit it for your archive.
+categories:
+  - llm
+  - Documents
+  - Embeddings
+  - Reranking
+
+models:
+  - name: qwen3-0.6b-4bit
+    provider: huggingface
+    repo: mlx-community/Qwen3-0.6B-4bit
+    category: llm
+    priority: p1
+    personal_notes: "Example personal note: summarize intended use, strengths, and limitations for your setup."
+    revision: main
+    upstream_repo: Qwen/Qwen3-0.6B
+    enabled: true
